@@ -312,7 +312,7 @@ std::string ProtoConverter::typedParametersAsString(CalleeType _calleeType)
 	}
 }
 
-/// Test function to be called externally.
+// Test function to be called externally.
 string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDefs)
 {
 	// TODO: Support more than one but less than N local variables
@@ -491,10 +491,10 @@ pragma experimental ABIEncoderV2;)";
 	string testFunction = visit(_x.testfunction(), storageVarDefs);
 	/* Structure of contract body
 	 * - Storage variable declarations
-	 * - Struct type declarations
+	 * - Struct definitions
 	 * - Test function
-     *     - Storage variable definitions
-	 *     - Local variable definitions
+	 *     - Storage variable assignments
+	 *     - Local variable definitions and assignments
 	 *     - Test code proper (calls public and external functions)
 	 * - Helper functions
 	 */
@@ -557,8 +557,13 @@ string TypeVisitor::visit(ArrayType const& _type)
 	                     string("]") :
 	                     string("[]");
 	m_baseType += arrayBraces;
-	if (!_type.is_static())
-		m_isLastDynParamRightPadded = true;
+
+	// If we don't know yet if the array will be dynamically encoded,
+	// check again. If we already know that it will be, there's no
+	// need to do anything.
+	if (!m_isLastDynParamRightPadded)
+		m_isLastDynParamRightPadded = DynParamVisitor().visit(_type);
+
 	return baseType + arrayBraces;
 }
 
