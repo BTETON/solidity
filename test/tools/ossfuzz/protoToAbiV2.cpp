@@ -114,8 +114,15 @@ template <typename T>
 pair<string, string> ProtoConverter::processType(T const& _type, bool _isValueType)
 {
 	ostringstream local, global;
-	auto varNames = newVarNames(getNextVarCounter());
+	auto varNames = newVarNames(getNextVarCounter(), m_isStateVar);
 	string varName = varNames.first;
+
+	// Add variable name to the parameter list of coder function call
+	if (m_paramsCoder.str().empty())
+		m_paramsCoder << varName;
+	else
+		m_paramsCoder << ", " << varName;
+
 	string paramName = varNames.second;
 	string location{};
 	if (!m_isStateVar && !_isValueType)
@@ -261,6 +268,58 @@ void ProtoConverter::appendTypedParams(
 	}
 }
 
+void ProtoConverter::appendTypes(
+	CalleeType _calleeType,
+	bool _isValueType,
+	string const& _typeString,
+	Delimiter _delimiter
+)
+{
+	switch (_calleeType)
+	{
+	case CalleeType::PUBLIC:
+		appendTypesPublic(_isValueType, _typeString, _delimiter);
+		break;
+	case CalleeType::EXTERNAL:
+		appendTypesExternal(_isValueType, _typeString, _delimiter);
+		break;
+	}
+}
+
+void ProtoConverter::appendTypesPublic(
+	bool _isValueType,
+	string const& _typeString,
+	Delimiter _delimiter
+)
+{
+	string qualifiedTypeString = (
+		_isValueType ?
+		_typeString :
+		_typeString + " memory"
+	);
+	m_typesPublic << Whiskers(R"(<delimiter><type> )")
+		("delimiter", delimiterToString(_delimiter))
+		("type", qualifiedTypeString)
+		.render();
+}
+
+void ProtoConverter::appendTypesExternal(
+	bool _isValueType,
+	string const& _typeString,
+	Delimiter _delimiter
+)
+{
+	string qualifiedTypeString = (
+		_isValueType ?
+		_typeString :
+		_typeString + " calldata"
+	);
+	m_typesExternal << Whiskers(R"(<delimiter><type> )")
+		("delimiter", delimiterToString(_delimiter))
+		("type", qualifiedTypeString)
+		.render();
+}
+
 // Adds the qualifier "calldata" to non-value parameter of an external function.
 void ProtoConverter::appendTypedParamsExternal(
 	bool _isValueType,
@@ -312,7 +371,6 @@ std::string ProtoConverter::typedParametersAsString(CalleeType _calleeType)
 	}
 }
 
-// Test function to be called externally.
 string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDefs)
 {
 	// TODO: Support more than one but less than N local variables
@@ -322,7 +380,7 @@ string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDe
 	string localVarDefs = localVarBuffers.second;
 
 	ostringstream testBuffer;
-	string functionDecl = "function test() public returns (uint)";
+	string functionDecl = "function test_calldata_coding() internal returns (uint)";
 	testBuffer << Whiskers(R"(<structTypeDecl>
 	<functionDecl> {
 <storageVarDefs>
@@ -341,11 +399,11 @@ string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDe
 string ProtoConverter::testCode(unsigned _invalidLength)
 {
 	return Whiskers(R"(
-		uint returnVal = this.coder_public(<parameterNames>);
+		uint returnVal = this.coder_calldata_public(<parameterNames>);
 		if (returnVal != 0)
 			return returnVal;
 
-		returnVal = this.coder_external(<parameterNames>);
+		returnVal = this.coder_calldata_external(<parameterNames>);
 		if (returnVal != 0)
 			return uint(200000) + returnVal;
 
@@ -353,7 +411,7 @@ string ProtoConverter::testCode(unsigned _invalidLength)
 		bytes memory argumentEncoding = abi.encode(<parameterNames>);
 
 		returnVal = checkEncodedCall(
-			this.coder_public.selector,
+			this.coder_calldata_public.selector,
 			argumentEncoding,
 			<invalidLengthFuzz>,
 			<isRightPadded>
@@ -362,7 +420,7 @@ string ProtoConverter::testCode(unsigned _invalidLength)
 			return returnVal;
 
 		returnVal = checkEncodedCall(
-			this.coder_external.selector,
+			this.coder_calldata_external.selector,
 			argumentEncoding,
 			<invalidLengthFuzz>,
 			<isRightPadded>
@@ -372,7 +430,7 @@ string ProtoConverter::testCode(unsigned _invalidLength)
 		</atLeastOneVar>
 		return 0;
 		)")
-		("parameterNames", dev::suffixedVariableNameList(s_varNamePrefix, 0, m_varCounter))
+		("parameterNames", m_paramsCoder.str())
 		("invalidLengthFuzz", std::to_string(_invalidLength))
 		("isRightPadded", isLastDynParamRightPadded() ? "true" : "false")
 		("atLeastOneVar", m_varCounter > 0)
@@ -455,18 +513,25 @@ string ProtoConverter::helperFunctions()
 			return 400001;
 		return 0;
 	}
+
+	function test() public returns (uint) {
+		uint returnVal = test_calldata_coding();
+		if (returnVal != 0)
+			return returnVal;
+		return 0;
+	}
 	)";
 
 	// These are callee functions that encode from storage, decode to
 	// memory/calldata and check if decoded value matches storage value
 	// return true on successful match, false otherwise
 	helperFuncs << Whiskers(R"(
-	function coder_public(<parameters_memory>) public pure returns (uint) {
+	function coder_calldata_public(<parameters_memory>) public pure returns (uint) {
 <equality_checks>
 		return 0;
 	}
 
-	function coder_external(<parameters_calldata>) external pure returns (uint) {
+	function coder_calldata_external(<parameters_calldata>) external pure returns (uint) {
 <equality_checks>
 		return 0;
 	}

@@ -242,6 +242,28 @@ private:
 		Delimiter _delimiter = Delimiter::ADD
 	);
 
+	/// Append types to typed stream used by returndata coders.
+	void appendTypes(
+		CalleeType _calleeType,
+		bool _isValueType,
+		std::string const& _typeString,
+		Delimiter _delimiter
+	);
+
+	/// Append types to typed stream used by public returndata coder.
+	void appendTypesPublic(
+		bool _isValueType,
+		std::string const& _typeString,
+		Delimiter _delimiter
+	);
+
+	/// Append types to typed stream used by external returndata coder.
+	void appendTypesExternal(
+		bool _isValueType,
+		std::string const& _typeString,
+		Delimiter _delimiter
+	);
+
 	/// Returns a Solidity variable declaration statement
 	/// @param _type: string containing Solidity type of the
 	/// variable to be declared.
@@ -277,10 +299,13 @@ private:
 
 	/// Return a pair of names for Solidity variable and the same variable when
 	/// passed as a function parameter.
-	static std::pair<std::string, std::string> newVarNames(unsigned _varCounter)
+	/// @param _varCounter: name suffix
+	/// @param _stateVar: predicate that is true for state variables, false otherwise
+	static std::pair<std::string, std::string> newVarNames(unsigned _varCounter, bool _stateVar)
 	{
+		std::string varName = _stateVar ? s_stateVarNamePrefix : s_localVarNamePrefix;
 		return std::make_pair(
-			s_varNamePrefix + std::to_string(_varCounter),
+			varName + std::to_string(_varCounter),
 			s_paramNamePrefix + std::to_string(_varCounter)
 		);
 	}
@@ -303,6 +328,12 @@ private:
 	/// Contains typed parameter list to be passed to callee functions
 	std::ostringstream m_typedParamsExternal;
 	std::ostringstream m_typedParamsPublic;
+	/// Contains type stream to be used in returndata coder function
+	/// signature
+	std::ostringstream m_typesPublic;
+	std::ostringstream m_typesExternal;
+	/// Parameter names to be passed to coder functions
+	std::ostringstream m_paramsCoder;
 	/// Predicate that is true if we are in contract scope
 	bool m_isStateVar;
 	unsigned m_counter;
@@ -317,8 +348,9 @@ private:
 	unsigned m_structCounter;
 	unsigned m_numStructsAdded;
 	/// Prefixes for declared and parameterized variable names
-	static auto constexpr s_varNamePrefix = "x_";
-	static auto constexpr s_paramNamePrefix = "c_";
+	static auto constexpr s_localVarNamePrefix = "lv_";
+	static auto constexpr s_stateVarNamePrefix = "sv_";
+	static auto constexpr s_paramNamePrefix = "p_";
 };
 
 /// Visitor interface for Solidity protobuf types.
