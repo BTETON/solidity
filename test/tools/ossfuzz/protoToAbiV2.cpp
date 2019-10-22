@@ -387,6 +387,7 @@ string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDe
 <returndataTestCode>
 	}
 
+<?varsPresent>
 	function coder_returndata_public() public returns (<return_types>) {
 <storageVarDefs>
 <localVarDefs>
@@ -397,7 +398,9 @@ string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDe
 <storageVarDefs>
 <localVarDefs>
 		return (<return_values>);
-	})")
+	}
+</varsPresent>)")
+		("varsPresent", !m_types.str().empty())
 		("structTypeDecl", structTypeDecl)
 		("functionDeclCalldata", functionDeclCalldata)
 		("functionDeclReturndata", functionDeclReturndata)
@@ -454,13 +457,14 @@ string ProtoConverter::testCallDataFunction(unsigned _invalidLength)
 
 string ProtoConverter::testReturnDataFunction()
 {
-	return Whiskers(R"(
+	return Whiskers(R"(<?varsPresent>
 		(<varDecl>) = this.coder_returndata_public();
 <equality_checks>
 		(<varRef>) = this.coder_returndata_external();
-<equality_checks>
+<equality_checks></varsPresent>
 		return 0;
 		)")
+		("varsPresent", !m_typedReturn.str().empty())
 		("varDecl", m_typedReturn.str())
 		("equality_checks", regex_replace(m_checks.str(), regex("p_"), "lv_"))
 		("varRef", dev::suffixedVariableNameList("lv_", 0, m_varCounter))
