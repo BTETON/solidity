@@ -1,4 +1,5 @@
 #include <test/tools/ossfuzz/protoToAbiV2.h>
+#include <regex>
 
 using namespace std;
 using namespace dev;
@@ -117,11 +118,11 @@ pair<string, string> ProtoConverter::processType(T const& _type, bool _isValueTy
 	auto varNames = newVarNames(getNextVarCounter(), m_isStateVar);
 	string varName = varNames.first;
 
-	// Add variable name to the parameter list of coder function call
-	if (m_paramsCoder.str().empty())
-		m_paramsCoder << varName;
+	// Add variable name to the argument list of coder function call
+	if (m_argsCoder.str().empty())
+		m_argsCoder << varName;
 	else
-		m_paramsCoder << ", " << varName;
+		m_argsCoder << ", " << varName;
 
 	string paramName = varNames.second;
 	string location{};
@@ -184,6 +185,16 @@ pair<string, string> ProtoConverter::varDecl(
 		_isValueType,
 		typeStr,
 		_paramName,
+		((m_varCounter == 1) ? Delimiter::SKIP : Delimiter::ADD)
+	);
+	appendTypes(
+		_isValueType,
+		typeStr,
+		((m_varCounter == 1) ? Delimiter::SKIP : Delimiter::ADD)
+	);
+	appendTypedReturn(
+		_isValueType,
+		typeStr,
 		((m_varCounter == 1) ? Delimiter::SKIP : Delimiter::ADD)
 	);
 
@@ -269,24 +280,6 @@ void ProtoConverter::appendTypedParams(
 }
 
 void ProtoConverter::appendTypes(
-	CalleeType _calleeType,
-	bool _isValueType,
-	string const& _typeString,
-	Delimiter _delimiter
-)
-{
-	switch (_calleeType)
-	{
-	case CalleeType::PUBLIC:
-		appendTypesPublic(_isValueType, _typeString, _delimiter);
-		break;
-	case CalleeType::EXTERNAL:
-		appendTypesExternal(_isValueType, _typeString, _delimiter);
-		break;
-	}
-}
-
-void ProtoConverter::appendTypesPublic(
 	bool _isValueType,
 	string const& _typeString,
 	Delimiter _delimiter
@@ -297,13 +290,13 @@ void ProtoConverter::appendTypesPublic(
 		_typeString :
 		_typeString + " memory"
 	);
-	m_typesPublic << Whiskers(R"(<delimiter><type> )")
+	m_types << Whiskers(R"(<delimiter><type>)")
 		("delimiter", delimiterToString(_delimiter))
 		("type", qualifiedTypeString)
 		.render();
 }
 
-void ProtoConverter::appendTypesExternal(
+void ProtoConverter::appendTypedReturn(
 	bool _isValueType,
 	string const& _typeString,
 	Delimiter _delimiter
@@ -312,11 +305,12 @@ void ProtoConverter::appendTypesExternal(
 	string qualifiedTypeString = (
 		_isValueType ?
 		_typeString :
-		_typeString + " calldata"
+		_typeString + " memory"
 	);
-	m_typesExternal << Whiskers(R"(<delimiter><type> )")
+	m_typedReturn << Whiskers(R"(<delimiter><type> <varName>)")
 		("delimiter", delimiterToString(_delimiter))
 		("type", qualifiedTypeString)
+		("varName", "lv_" + to_string(m_varCounter - 1))
 		.render();
 }
 
@@ -380,35 +374,56 @@ string ProtoConverter::visit(TestFunction const& _x, string const& _storageVarDe
 	string localVarDefs = localVarBuffers.second;
 
 	ostringstream testBuffer;
-	string functionDecl = "function test_calldata_coding() internal returns (uint)";
+	string functionDeclCalldata = "function test_calldata_coding() internal returns (uint)";
+	string functionDeclReturndata = "function test_returndata_coding() internal returns (uint)";
 	testBuffer << Whiskers(R"(<structTypeDecl>
-	<functionDecl> {
+	<functionDeclCalldata> {
 <storageVarDefs>
 <localVarDefs>
-<testCode>
+<calldataTestCode>
+	}
+
+	<functionDeclReturndata> {
+<returndataTestCode>
+	}
+
+	function coder_returndata_public() public returns (<return_types>) {
+<storageVarDefs>
+<localVarDefs>
+		return (<return_values>);
+	}
+
+	function coder_returndata_external() external returns (<return_types>) {
+<storageVarDefs>
+<localVarDefs>
+		return (<return_values>);
 	})")
 		("structTypeDecl", structTypeDecl)
-		("functionDecl", functionDecl)
+		("functionDeclCalldata", functionDeclCalldata)
+		("functionDeclReturndata", functionDeclReturndata)
 		("storageVarDefs", _storageVarDefs)
 		("localVarDefs", localVarDefs)
-		("testCode", testCode(_x.invalid_encoding_length()))
+		("calldataTestCode", testCallDataFunction(_x.invalid_encoding_length()))
+		("returndataTestCode", testReturnDataFunction())
+		("return_types", m_types.str())
+		("return_values", m_argsCoder.str())
 		.render();
 	return testBuffer.str();
 }
 
-string ProtoConverter::testCode(unsigned _invalidLength)
+string ProtoConverter::testCallDataFunction(unsigned _invalidLength)
 {
 	return Whiskers(R"(
-		uint returnVal = this.coder_calldata_public(<parameterNames>);
+		uint returnVal = this.coder_calldata_public(<argumentNames>);
 		if (returnVal != 0)
 			return returnVal;
 
-		returnVal = this.coder_calldata_external(<parameterNames>);
+		returnVal = this.coder_calldata_external(<argumentNames>);
 		if (returnVal != 0)
 			return uint(200000) + returnVal;
 
 		<?atLeastOneVar>
-		bytes memory argumentEncoding = abi.encode(<parameterNames>);
+		bytes memory argumentEncoding = abi.encode(<argumentNames>);
 
 		returnVal = checkEncodedCall(
 			this.coder_calldata_public.selector,
@@ -430,10 +445,25 @@ string ProtoConverter::testCode(unsigned _invalidLength)
 		</atLeastOneVar>
 		return 0;
 		)")
-		("parameterNames", m_paramsCoder.str())
+		("argumentNames", m_argsCoder.str())
 		("invalidLengthFuzz", std::to_string(_invalidLength))
 		("isRightPadded", isLastDynParamRightPadded() ? "true" : "false")
 		("atLeastOneVar", m_varCounter > 0)
+		.render();
+}
+
+string ProtoConverter::testReturnDataFunction()
+{
+	return Whiskers(R"(
+		(<varDecl>) = this.coder_returndata_public();
+<equality_checks>
+		(<varRef>) = this.coder_returndata_external();
+<equality_checks>
+		return 0;
+		)")
+		("varDecl", m_typedReturn.str())
+		("equality_checks", regex_replace(m_checks.str(), regex("p_"), "lv_"))
+		("varRef", dev::suffixedVariableNameList("lv_", 0, m_varCounter))
 		.render();
 }
 
@@ -441,6 +471,7 @@ string ProtoConverter::helperFunctions()
 {
 	stringstream helperFuncs;
 	helperFuncs << R"(
+	/// Compares bytes, returning true if they are equal and false otherwise.
 	function bytesCompare(bytes memory a, bytes memory b) internal pure returns (bool) {
 		if(a.length != b.length)
 			return false;
@@ -514,11 +545,14 @@ string ProtoConverter::helperFunctions()
 		return 0;
 	}
 
-	function test() public returns (uint) {
-		uint returnVal = test_calldata_coding();
-		if (returnVal != 0)
-			return returnVal;
-		return 0;
+	/// Test function entrypoint that tests calldata coding if input
+	/// parameter is true, and returndata coding if input parameter
+	/// is false.
+	function test(bool calldatatest) public returns (uint) {
+		if (calldatatest)
+			return test_calldata_coding();
+		else
+			return test_returndata_coding();
 	}
 	)";
 

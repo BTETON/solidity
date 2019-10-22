@@ -94,6 +94,7 @@ message TestFunction {
 message Contract {
     required VarDecl state_vars = 1;
     required TestFunction testfunction = 2;
+    required bool testcalldata_coding = 3;
 }
 
 package dev.test.abiv2fuzzer;

@@ -24,18 +24,48 @@
  *
  * contract C {
  *      // State variable
- *      string x_0;
+ *      string sv_0;
  *      // Test function that is called by the VM.
- *      function test() public returns (uint) {
+ *      function test(bool test_calldata_coding) public returns (uint) {
+ *      	if (test_calldata_coding)
+ *          	return this.test_calldata()
+*          	else
+ *          	return this.test_returndata()
+ *		}
+ *
+ *		function test_returndata() internal returns (uint) {
+ *			string memory lv_0, bytes memory lv_1 = test_returndata_public();
+ *			if (lv_0 != 044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d)
+ *				return 1;
+ *			if (lv_1 != "1")
+ *				return 2;
+ *			return 0;
+ *		}
+ *
+ *		function test_returndata_public() public returns (string memory, bytes memory)
+ *		{
+ *			sv_0 = "044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d";
+ *			bytes memory lv_0 = "1";
+ *			return (sv_0, lv_0);
+ *		}
+ *
+ *		function test_returndata_external() external returns (string memory, bytes memory)
+ *		{
+ *			sv_0 = "044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d";
+ *			bytes memory lv_0 = "1";
+ *			return (sv_0, lv_0);
+ *		}
+ *
+ *		function test_calldata() internal returns (uint) {
  *          // Local variable
- *          bytes x_1 = "1";
- *          x_0 = "044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d";
- *          uint returnVal = this.coder_public(x_0, x_1);
+ *          bytes lv_1 = "1";
+ *          sv_0 = "044852b2a670ade5407e78fb2863c51de9fcb96542a07186fe3aeda6bb8a116d";
+ *          uint returnVal = this.coder_public(sv_0, lv_1);
  *          if (returnVal != 0)
  *              return returnVal;
  *          // Since the return codes in the public and external coder functions are identical
  *          // we offset error code by a fixed amount (200000) for differentiation.
- *          returnVal = this.coder_external(x_0, x_1);
+ *          returnVal = this.coder_external(sv_0, lv_1);
  *          if (returnVal != 0)
  *              return 200000 + returnVal;
  *          // Encode parameters
@@ -244,21 +274,13 @@ private:
 
 	/// Append types to typed stream used by returndata coders.
 	void appendTypes(
-		CalleeType _calleeType,
 		bool _isValueType,
 		std::string const& _typeString,
 		Delimiter _delimiter
 	);
 
-	/// Append types to typed stream used by public returndata coder.
-	void appendTypesPublic(
-		bool _isValueType,
-		std::string const& _typeString,
-		Delimiter _delimiter
-	);
-
-	/// Append types to typed stream used by external returndata coder.
-	void appendTypesExternal(
+	/// Append typed return value.
+	void appendTypedReturn(
 		bool _isValueType,
 		std::string const& _typeString,
 		Delimiter _delimiter
@@ -287,8 +309,11 @@ private:
 	/// Return Solidity helper functions as string
 	std::string helperFunctions();
 
-	/// Return top-level test code as string
-	std::string testCode(unsigned _invalidLength);
+	/// Return top-level calldata coder test function as string
+	std::string testCallDataFunction(unsigned _invalidLength);
+
+	/// Return top-level returndata coder test function as string
+	std::string testReturnDataFunction();
 
 	/// Return the next variable count that is used for
 	/// variable naming.
@@ -330,10 +355,10 @@ private:
 	std::ostringstream m_typedParamsPublic;
 	/// Contains type stream to be used in returndata coder function
 	/// signature
-	std::ostringstream m_typesPublic;
-	std::ostringstream m_typesExternal;
-	/// Parameter names to be passed to coder functions
-	std::ostringstream m_paramsCoder;
+	std::ostringstream m_types;
+	std::ostringstream m_typedReturn;
+	/// Argument names to be passed to coder functions
+	std::ostringstream m_argsCoder;
 	/// Predicate that is true if we are in contract scope
 	bool m_isStateVar;
 	unsigned m_counter;
