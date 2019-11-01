@@ -33,21 +33,22 @@ void ForLoopConditionIntoBody::operator()(ForLoop& _forLoop)
 {
 	if (m_dialect.booleanNegationFunction() && _forLoop.condition->type() != typeid(Literal))
 	{
-		langutil::SourceLocation loc = locationOf(*_forLoop.condition);
-		_forLoop.body.statements.insert(
-			_forLoop.body.statements.begin(),
-			If {
+		auto const loc = locationOf(*_forLoop.condition);
+		auto condExpr = make_unique<Expression>(
+			FunctionCall {
 				loc,
-				make_unique<Expression>(
-					FunctionCall {
-						loc,
-						{loc, m_dialect.booleanNegationFunction()->name},
-						make_vector<Expression>(std::move(*_forLoop.condition))
-					}
-				),
-				Block {loc, make_vector<Statement>(Break{{}})}
+				{loc, m_dialect.booleanNegationFunction()->name},
+				make_vector<Expression>(std::move(*_forLoop.condition))
 			}
 		);
+
+		auto ifStmt = If {
+			loc,
+			std::move(condExpr),
+			Block{loc, make_vector<Statement>(Break{{}})}
+		};
+
+		_forLoop.body.statements.insert(begin(_forLoop.body.statements), move(ifStmt));
 		_forLoop.condition = make_unique<Expression>(
 			Literal {
 				loc,
